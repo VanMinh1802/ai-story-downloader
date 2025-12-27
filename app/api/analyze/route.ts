@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { monkeyService } from "@src/services/monkeyService.ts";
+import { monkeyService } from "@src/services/monkeyService";
 
 export async function POST(request: Request) {
   try {

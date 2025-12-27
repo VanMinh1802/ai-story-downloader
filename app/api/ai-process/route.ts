@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { env } from "@src/config/env.ts";
+import { env } from "@src/config/env";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import process from "node:process";
 

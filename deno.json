@@ -1,5 +1,10 @@
 {
   "nodeModulesDir": "auto",
+  "imports": {
+    "@src/config/env": "./src/config/env.ts",
+    "@src/repositories/genation": "./src/repositories/genation.ts",
+    "@src/services/monkeyService": "./src/services/monkeyService.ts"
+  },
   "tasks": {
     "dev": "next dev",
     "build": "next build",

@@ -1,6 +1,6 @@
 import * as cheerio from "cheerio";
-import { genation } from "@src/repositories/genation.ts";
-import { env } from "@src/config/env.ts";
+import { genation } from "@src/repositories/genation";
+import { env } from "@src/config/env";
 
 export const monkeyService = () => {
   // Hàm helper để giải mã CSS content (loại bỏ dấu ngoặc kép, ký tự escape)
