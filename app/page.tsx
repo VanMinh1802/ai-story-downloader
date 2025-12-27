@@ -20,7 +20,7 @@ export default function Home() {
   const [error, setError] = useState("");
 
   const processUrl = async (urlToProcess: string, index?: number) => {
-      setLoading(true);
+      if (!index) setLoading(true);
       setError("");
       // Chỉ xóa kết quả nếu ở chế độ đơn lẻ
       if (!index) setResult(null);
