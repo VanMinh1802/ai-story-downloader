@@ -8,8 +8,8 @@ export async function POST(request: Request) {
     if (!url) {
       return NextResponse.json(
         { error: "URL is required" },
-        // @ts-expect-error: ResponseInit type mismatch
-        { status: 400 }
+        // deno-lint-ignore no-explicit-any
+        { status: 400 } as any // eslint-disable-line @typescript-eslint/no-explicit-any
       );
     }
 
@@ -19,8 +19,8 @@ export async function POST(request: Request) {
     } catch {
       return NextResponse.json(
         { error: "Invalid URL format" },
-        // @ts-expect-error: ResponseInit type mismatch
-        { status: 400 }
+        // deno-lint-ignore no-explicit-any
+        { status: 400 } as any // eslint-disable-line @typescript-eslint/no-explicit-any
       );
     }
 
@@ -44,8 +44,8 @@ export async function POST(request: Request) {
     console.error("Analysis error:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to analyze URL" },
-      // @ts-expect-error: ResponseInit type mismatch
-      { status: 500 }
+      // deno-lint-ignore no-explicit-any
+      { status: 500 } as any // eslint-disable-line @typescript-eslint/no-explicit-any
     );
   }
 }
