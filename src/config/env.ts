@@ -1,9 +1,9 @@
-/// <reference lib="deno.ns" />
-
 const getKey = (key: string) => {
   // Thử Deno.env trước nếu có (Deno phía server)
-  if (typeof Deno !== "undefined") {
-    return Deno.env.get(key) || "";
+  // deno-lint-ignore no-explicit-any
+  const deno = (globalThis as any).Deno;
+  if (deno) {
+    return deno.env.get(key) || "";
   }
   // Dự phòng sang process.env (tương thích Next.js/Node)
   return globalThis.process?.env?.[key] || "";
