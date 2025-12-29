@@ -42,8 +42,19 @@ export async function POST(request: Request) {
 
   } catch (error) {
     console.error("Analysis error:", error);
+    const errorMessage = error instanceof Error ? error.message : "Failed to analyze URL";
+    
+    // Return 422 Unprocessable Entity for known extraction errors
+    if (errorMessage.includes("Failed to extract") || errorMessage.includes("not found")) {
+         return NextResponse.json(
+            { error: `Extraction Failed: ${errorMessage}` },
+            // deno-lint-ignore no-explicit-any
+            { status: 422 } as any
+        );
+    }
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to analyze URL" },
+      { error: errorMessage },
       // deno-lint-ignore no-explicit-any
       { status: 500 } as any // eslint-disable-line @typescript-eslint/no-explicit-any
     );

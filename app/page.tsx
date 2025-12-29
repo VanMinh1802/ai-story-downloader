@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState } from "react";
 
 // --- Types ---
 interface AnalysisResult {
@@ -27,27 +27,42 @@ interface BatchJob {
     currentChapter?: string; // Added for granular feedback
 }
 
+interface Toast {
+    id: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+}
+
 // --- Components ---
 
 // 1. Icon Components (Inline SVG for portability)
 const Icons = {
-    Bolt: (props: any) => (
+    Bolt: (props: React.SVGProps<SVGSVGElement>) => (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="m3.75 13.5 10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75Z" /></svg>
     ),
-    Layers: (props: any) => (
+    Layers: (props: React.SVGProps<SVGSVGElement>) => (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M6.429 9.75L2.25 12l4.179 2.25m0-4.5l5.571 3 5.571-3m-11.142 0L2.25 7.5 12 2.25l9.75 5.25-4.179 2.25m0 0L21.75 12l-4.179 2.25m0 0l4.179 2.25L12 21.75 2.25 16.5l4.179-2.25m11.142 0l-5.571 3-5.571-3" /></svg>
     ),
-    Sparkles: (props: any) => (
+    Sparkles: (props: React.SVGProps<SVGSVGElement>) => (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 3.844L18 5.25l-.259-1.406a2.25 2.25 0 00-1.406-1.406L14.75 2.25l1.594-.259a2.25 2.25 0 001.406-1.406L18 0l.259 1.406a2.25 2.25 0 001.406 1.406L21.25 2.25l-1.594.259a2.25 2.25 0 00-1.406 1.406zM18.259 18.844L18 20.25l-.259-1.406a2.25 2.25 0 00-1.406-1.406L14.75 17.25l1.594-.259a2.25 2.25 0 001.406-1.406L18 15l.259 1.406a2.25 2.25 0 001.406 1.406L21.25 17.25l-1.594.259a2.25 2.25 0 00-1.406 1.406z" /></svg>
     ),
-    Play: (props: any) => (
+    Play: (props: React.SVGProps<SVGSVGElement>) => (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.348a1.125 1.125 0 010 1.971l-11.54 6.347a1.125 1.125 0 01-1.667-.985V5.653z" /></svg>
     ),
-    Trash: (props: any) => (
+    Trash: (props: React.SVGProps<SVGSVGElement>) => (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
     ),
-    Document: (props: any) => (
+    Document: (props: React.SVGProps<SVGSVGElement>) => (
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
+    ),
+    XCircle: (props: React.SVGProps<SVGSVGElement>) => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    ),
+    CheckCircle: (props: React.SVGProps<SVGSVGElement>) => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+    ),
+    Info: (props: React.SVGProps<SVGSVGElement>) => (
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
     )
 }
 
@@ -72,6 +87,17 @@ export default function Home() {
   const [aiResult, setAiResult] = useState("");
   const [aiError, setAiError] = useState("");
   const [mergeOutput, setMergeOutput] = useState(false);
+
+  // --- STATE: TOAST ---
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+      const id = Math.random().toString(36).substring(7);
+      setToasts(prev => [...prev, { id, message, type }]);
+      setTimeout(() => {
+          setToasts(prev => prev.filter(t => t.id !== id));
+      }, 3000); // Auto close after 3s
+  };
 
 
   // --- LOGIC: QUICK EXTRACTOR ---
@@ -115,6 +141,16 @@ export default function Home() {
 
   const handleAnalyze = async (e: React.FormEvent) => {
       e.preventDefault();
+      
+      if (!url.trim()) {
+        addToast("Vui lòng nhập URL truyện!", "error");
+        return;
+      }
+      if (!url.startsWith("http")) {
+         addToast("URL không hợp lệ (phải bắt đầu bằng http/https)", "error");
+         return;
+      }
+
       setLoading(true);
       try {
           const res = await processUrl(url);
@@ -131,7 +167,18 @@ export default function Home() {
 
   // --- LOGIC: BATCH MANAGER ---
   const handleBatchDownload = async () => {
-    if (!batchStoryUrl) return;
+    if (!batchStoryUrl) {
+        addToast("Vui lòng nhập URL truyện cho Batch Download!", "error");
+        return;
+    }
+    if (startChapter > endChapter) {
+        addToast("Chương bắt đầu phải nhỏ hơn hoặc bằng Chương kết thúc!", "error");
+        return;
+    }
+    if (startChapter < 1) {
+        addToast("Chương bắt đầu phải lớn hơn 0!", "error");
+        return;
+    }
 
     // 1. Prepare Jobs
     const baseUrl = batchStoryUrl.replace(/\.html$/, '');
@@ -263,6 +310,10 @@ export default function Home() {
         try {
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
+                if (file.size > 1024 * 1024) { // 1MB Limit
+                    addToast(`File ${file.name} quá lớn (>1MB). Vui lòng chọn file nhỏ hơn.`, "error");
+                    continue;
+                }
                 const text = await file.text();
                 newFiles.push({ name: file.name, content: text });
             }
@@ -288,6 +339,10 @@ export default function Home() {
     try {
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
+            if (file.size > 1024 * 1024) { // 1MB Limit
+                 addToast(`File ${file.name} quá lớn (>1MB). Vui lòng chọn file nhỏ hơn.`, "error");
+                 continue;
+            }
             const text = await file.text();
             newFiles.push({ name: file.name, content: text });
         }
@@ -298,7 +353,14 @@ export default function Home() {
   };
 
   const handleAiSubmit = async () => {
-    if (aiFiles.length === 0 || !aiPrompt) return;
+    if (aiFiles.length === 0) {
+        addToast("Vui lòng chọn hoặc kéo thả ít nhất 1 file!", "error");
+        return;
+    }
+    if (!aiPrompt.trim()) {
+        addToast("Vui lòng nhập yêu cầu (Prompt) cho AI!", "error");
+        return;
+    }
     setAiLoading(true);
     setAiError("");
     setAiResult("");
@@ -578,7 +640,7 @@ export default function Home() {
 
                                         {/* Action */}
                                         <div className="col-span-1 text-right">
-                                            <button className="text-gray-600 hover:text-white transition-colors">
+                                            <button type="button" className="text-gray-600 hover:text-white transition-colors">
                                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
                                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 12.75a.75.75 0 110-1.5.75.75 0 010 1.5zM12 18.75a.75.75 0 110-1.5.75.75 0 010 1.5z" />
                                                 </svg>
@@ -610,6 +672,7 @@ export default function Home() {
                         <span className="text-xs text-gray-400">Merge Output</span>
                     </label>
                     <button 
+                        type="button"
                         onClick={handleAiSubmit}
                         disabled={aiLoading}
                         className="bg-white text-black text-xs font-bold px-4 py-1.5 rounded hover:bg-gray-200 transition-colors flex items-center gap-2"
@@ -628,6 +691,7 @@ export default function Home() {
                         <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Input Context</span>
                         {aiFiles.length > 0 && (
                             <button 
+                                type="button"
                                 onClick={() => setAiFiles([])}
                                 className="text-[10px] text-red-400 hover:text-red-300 transition-colors flex items-center gap-1"
                             >
@@ -691,7 +755,7 @@ export default function Home() {
                     </div>
 
                     <textarea 
-                        className="flex-1 w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-3 text-sm text-gray-300 font-mono focus:outline-none focus:border-pink-500/50 resize-none placeholder:text-gray-700 transition-colors"
+                        className="flex-1 w-full bg-[#0a0a0a] border border-white/10 rounded-lg p-4 text-[15px] text-gray-200 font-sans leading-relaxed focus:outline-none focus:border-pink-500/50 resize-none placeholder:text-gray-600 transition-colors"
                         placeholder="Optional prompt guidance..."
                         value={aiPrompt}
                         onChange={(e) => setAiPrompt(e.target.value)}
@@ -702,14 +766,18 @@ export default function Home() {
                 <div className="p-4 flex flex-col h-full bg-[#080808] overflow-hidden">
                     <div className="mb-2 flex justify-between items-center shrink-0">
                          <span className="text-[10px] font-bold text-pink-500 uppercase">• Rewritten Version</span>
-                         {aiResult && <button className="text-[10px] text-gray-500 hover:text-white">Copy</button>}
+                         {aiResult && <button type="button" className="text-[10px] text-gray-500 hover:text-white">Copy</button>}
                     </div>
-                    <div className="flex-1 w-full rounded p-3 text-sm text-gray-400 font-mono overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
+                    <div className="flex-1 w-full rounded p-4 text-base text-gray-300 font-sans leading-loose overflow-y-auto scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
                         {aiLoading ? (
                              <div className="h-full flex items-center justify-center gap-2 text-pink-500 animate-pulse">
                                  <Icons.Sparkles className="w-5 h-5" />
                                  <span>AI is thinking...</span>
                              </div>
+                        ) : aiError ? (
+                            <div className="h-full flex items-center justify-center text-red-400 p-4 text-center">
+                                {aiError}
+                            </div>
                         ) : aiResult ? (
                             <div className="whitespace-pre-wrap pb-10">{aiResult}</div>
                         ) : (
@@ -723,6 +791,34 @@ export default function Home() {
         </section>
 
       </main>
+
+        {/* TOAST CONTAINER */}
+        <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+            {toasts.map(toast => (
+                <div 
+                    key={toast.id}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-2xl border backdrop-blur-md animate-slide-in min-w-[300px] max-w-[400px] transition-all duration-300 ${
+                        toast.type === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-200' :
+                        toast.type === 'success' ? 'bg-green-500/10 border-green-500/50 text-green-200' :
+                        'bg-blue-500/10 border-blue-500/50 text-blue-200'
+                    }`}
+                >
+                    {toast.type === 'error' && <Icons.XCircle className="w-5 h-5 shrink-0 text-red-500" />}
+                    {toast.type === 'success' && <Icons.CheckCircle className="w-5 h-5 shrink-0 text-green-500" />}
+                    {toast.type === 'info' && <Icons.Info className="w-5 h-5 shrink-0 text-blue-500" />}
+                    
+                    <span className="text-sm font-medium">{toast.message}</span>
+                    
+                    <button 
+                        onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+                        className="ml-auto text-white/50 hover:text-white"
+                        type="button"
+                    >
+                        <Icons.XCircle className="w-4 h-4" />
+                    </button>
+                </div>
+            ))}
+        </div>
     </div>
   );
 }

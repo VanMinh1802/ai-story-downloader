@@ -64,6 +64,14 @@ export async function POST(request: Request) {
 
     if (lastError && !aiResponse) {
         let errorMsg = lastError instanceof Error ? lastError.message : String(lastError);
+
+        if (errorMsg.includes("429") || errorMsg.includes("Too Many Requests")) {
+             return NextResponse.json(
+                { error: "⚠️ AI Overloaded (429): Google Quota Exceeded. Please wait ~30s." },
+                // deno-lint-ignore no-explicit-any
+                { status: 429 } as any
+            );
+        }
         
         try {
             // Lấy danh sách model có sẵn để hiển thị cho người dùng
