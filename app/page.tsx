@@ -664,7 +664,7 @@ export default function Home() {
                 </div>
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 px-3 py-1 bg-[#0a0a0a] rounded border border-white/10">
-                        <span className="text-[10px] bg-purple-500 text-white px-1.5 rounded">BETA</span>
+                        <span className="text-[10px] bg-purple-500 text-white px-1.5 rounded">v1.1</span>
                         <span className="text-xs text-gray-400">Gemini 2.0 Flash</span>
                     </div>
                     <label className="flex items-center gap-2 cursor-pointer">
