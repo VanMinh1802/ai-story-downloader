@@ -304,11 +304,20 @@ export default function Home() {
     setAiResult("");
     
     try {
-         const file = aiFiles[0];
+        let contentToProcess = "";
+
+        if (mergeOutput && aiFiles.length > 1) {
+            // MERGE MODE: Join all files with headers
+            contentToProcess = aiFiles.map(f => `--- FILE: ${f.name} ---\n${f.content}`).join("\n\n");
+        } else {
+            // SINGLE MODE: Just take the first one
+            contentToProcess = aiFiles[0].content;
+        }
+
          const response = await fetch("/api/ai-process", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ prompt: aiPrompt, content: file.content }),
+            body: JSON.stringify({ prompt: aiPrompt, content: contentToProcess }),
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.error);
