@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Bài Tập 1: Luyện Tập CSS Selector</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; line-height: 1.6; }
+        .box { border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; border-radius: 8px; background: #f9f9f9; }
+        .highlight { color: red; font-weight: bold; }
+        #secret-key { display: none; } /* Cái này bị ẩn nhưng vẫn lấy được bằng JS */
+        
+        /* Giả lập kỹ thuật giấu chữ */
+        .encrypted-msg::after {
+            content: " Mật mã là: NextJS_Deno_2025";
+            color: blue;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Bài Tập: Thám Tử Selector</h1>
+    <p>Mở <b>F12</b> (Developer Tools), chuyển sang tab <b>Console</b> và gõ lệnh JavaScript để tìm các nội dung sau.</p>
+    <p>Cú pháp gợi ý: <code>document.querySelector('YOUR_SELECTOR').innerText</code></p>
+
+    <div class="box">
+        <h3>Thử thách 1: Lấy nội dung cơ bản</h3>
+        <p class="intro">1. Hãy lấy nội dung của dòng này (class="intro").</p>
+        <p id="unique-id">2. Hãy lấy nội dung của dòng này (id="unique-id").</p>
+    </div>
+
+    <div class="box story-container">
+        <h3>Thử thách 2: Cấu trúc lồng nhau</h3>
+        <div class="chapter">
+            <p>3. Hãy lấy dòng chữ này. (Gợi ý: Dòng này là thẻ p nằm trong class="chapter", và class="chapter" nằm trong class="story-container").</p>
+        </div>
+        <div class="ads">
+            <p>Đừng lấy dòng này! Đây là quảng cáo.</p>
+        </div>
+    </div>
+
+    <div class="box">
+        <h3>Thử thách 3: Nội dung ẩn (Nâng cao)</h3>
+        <p>4. Dưới đây là một thẻ span có nội dung được tạo bởi CSS (::after). Hãy thử inspect nó.</p>
+        <span class="encrypted-msg">Nội dung thực: </span>
+        <br><br>
+        <p><i>Lưu ý: Với `document.querySelector`, bạn KHÔNG THỂ lấy được text trong ::after. Đây là lý do tại sao dự án `ai-story-downloader` phải phân tích file CSS thủ công!</i></p>
+    </div>
+
+    <script>
+        console.log("%cChào mừng bạn đến với Console!", "color: green; font-size: 20px; font-weight: bold;");
+        console.log("Hãy gõ lệnh để giải bài tập. Ví dụ: document.querySelector('.intro').innerText");
+    </script>
+</body>
+</html>
