@@ -9,6 +9,7 @@ import AIStudio from "@/components/AIStudio";
 
 import TaskList from "@/components/TaskList";
 import ThemeToggle from "@/components/ThemeToggle";
+import OnboardingTour from "@/components/OnboardingTour";
 
 // --- Types ---
 interface Task {
@@ -316,7 +317,7 @@ export default function Home() {
   // Auto-trigger onboarding on first visit
   useEffect(() => {
     const hasCompletedTour = localStorage.getItem(
-      "story-commander-tour-completed"
+      "story-commander-tour-completed-v2"
     );
     if (!hasCompletedTour) {
       setShowOnboarding(true);
@@ -1098,6 +1099,19 @@ export default function Home() {
         onConfirm={confirmDialog.onConfirm}
         onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
       />
+      {/* ONBOARDING TOUR */}
+      {showOnboarding && (
+        <OnboardingTour
+          onComplete={() => {
+            setShowOnboarding(false);
+            localStorage.setItem("story-commander-tour-completed-v2", "true");
+          }}
+          onSkip={() => {
+            setShowOnboarding(false);
+            localStorage.setItem("story-commander-tour-completed-v2", "true");
+          }}
+        />
+      )}
     </div>
   );
 }
