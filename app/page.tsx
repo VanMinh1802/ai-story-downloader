@@ -1,20 +1,14 @@
 "use client";
 
-import React, {
-  useState,
-  useEffect,
-  lazy,
-  Suspense,
-  useMemo,
-  useCallback,
-} from "react";
+import React, { useState, useEffect } from "react";
 import ConfirmDialog from "@/components/ConfirmDialog";
-import { TaskCardSkeleton } from "@/components/Skeleton";
-import { useDebounce } from "@/hooks/useDebounce";
-import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import TaskCard from "@/components/TaskCard";
+import ExtractForm from "@/components/ExtractForm";
+import BatchManager from "@/components/BatchManager";
+import AIStudio from "@/components/AIStudio";
 
-// Lazy load onboarding tour to reduce initial bundle
-const OnboardingTour = lazy(() => import("@/components/OnboardingTour"));
+import TaskList from "@/components/TaskList";
+import ThemeToggle from "@/components/ThemeToggle";
 
 // --- Types ---
 interface Task {
@@ -32,7 +26,7 @@ interface Task {
 interface Toast {
   id: string;
   message: string;
-  type: "success" | "error" | "info";
+  type: "success" | "error" | "info" | "warning";
   duration?: number; // Auto-dismiss duration in ms (0 = no auto-dismiss)
   createdAt: number; // Timestamp for progress calculation
 }
@@ -276,7 +270,6 @@ export default function Home() {
     "extract"
   );
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [viewingTask, setViewingTask] = useState<Task | null>(null); // For Quick View Modal
 
   // --- STATE: FORMS ---
   // Extract
@@ -291,6 +284,7 @@ export default function Home() {
 
   // AI
   const [aiPrompt, setAiPrompt] = useState("");
+  const [inputContext, setInputContext] = useState(""); // Manual text input
   const [aiFiles, setAiFiles] = useState<{ name: string; content: string }[]>(
     []
   );
@@ -298,7 +292,6 @@ export default function Home() {
   const [mergeOutput, setMergeOutput] = useState(false);
 
   // Drag & Drop
-  const [isDragging, setIsDragging] = useState(false);
 
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -333,11 +326,16 @@ export default function Home() {
   // --- ACTIONS ---
   const addToast = (
     message: string,
-    type: "success" | "error" | "info" = "info"
+    type: "success" | "error" | "info" | "warning" = "info"
   ) => {
     const id = sizeId();
     // Smart duration based on type
-    const duration = type === "success" ? 3000 : type === "error" ? 7000 : 5000;
+    const duration =
+      type === "success"
+        ? 3000
+        : type === "error" || type === "warning"
+        ? 7000
+        : 5000;
     const createdAt = Date.now();
 
     setToasts((prev) => [...prev, { id, message, type, duration, createdAt }]);
@@ -391,44 +389,54 @@ export default function Home() {
         body: JSON.stringify({ url }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
 
-      // VALIDATION: Detect error pages
-      const content = data.data.content || "";
-      const title = data.data.title || "";
-      const errorPatterns = [
-        /404/i,
-        /error/i,
-        /không tồn tại/i,
-        /not found/i,
-        /trang bạn truy cập/i,
-      ];
-      const hasError = errorPatterns.some(
-        (p) => p.test(title) || p.test(content.slice(0, 500))
-      );
-      if (hasError || content.length < 100) {
-        throw new Error(
-          hasError ? "Nội dung không hợp lệ (Error/404)" : "Nội dung quá ngắn"
+      if (data.success) {
+        // VALIDATION: Detect error pages inside content
+        const content = data.data.content || "";
+        const title = data.data.title || "";
+        const errorPatterns = [
+          /404/i,
+          /error/i,
+          /không tồn tại/i,
+          /not found/i,
+          /trang bạn truy cập/i,
+        ];
+        const hasError = errorPatterns.some(
+          (p) => p.test(title) || p.test(content.slice(0, 500))
         );
+        if (hasError || content.length < 100) {
+          throw new Error(
+            hasError ? "Nội dung không hợp lệ (Error/404)" : "Nội dung quá ngắn"
+          );
+        }
+
+        // Update Task Success
+        setTasks((prev) =>
+          prev.map((t) =>
+            t.id === taskId
+              ? {
+                  ...t,
+                  status: "success",
+                  title: data.data.title || "Untitled Extraction",
+                  data: data.data.content,
+                  subtitle: `${(data.data.content.length / 1024).toFixed(
+                    1
+                  )} KB`,
+                }
+              : t
+          )
+        );
+
+        addToast("Extract thành công!", "success");
+      } else {
+        // Handle specific error codes
+        if (data.code === "DOMAIN_NOT_SUPPORTED") {
+          addToast(data.error, "warning");
+        }
+        throw new Error(data.error || "Unknown error occurred");
       }
-
-      // Update Task Success
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === taskId
-            ? {
-                ...t,
-                status: "success",
-                title: data.data.title || "Untitled Extraction",
-                data: data.data.content,
-                subtitle: `${(data.data.content.length / 1024).toFixed(1)} KB`,
-              }
-            : t
-        )
-      );
-
-      addToast("Extract thành công!", "success");
-    } catch (err: unknown) {
+    } catch (err: any) {
+      console.error(err);
       setTasks((prev) =>
         prev.map((t) =>
           t.id === taskId
@@ -441,10 +449,7 @@ export default function Home() {
             : t
         )
       );
-      addToast(
-        err instanceof Error ? err.message : "An error occurred",
-        "error"
-      );
+      addToast(err.message || "Failed to extract content", "error");
     } finally {
       setLoading(false);
       setUrl("");
@@ -453,11 +458,39 @@ export default function Home() {
 
   // --- LOGIC: BATCH ---
   const handleBatchDownload = async () => {
-    if (!batchStoryUrl || startChapter > endChapter)
-      return addToast("Thông tin Batch không hợp lệ!", "error");
+    // VALIDATION
+    if (!batchStoryUrl.trim() || !batchStoryUrl.startsWith("http")) {
+      return addToast(
+        "URL truyện không hợp lệ (phải bắt đầu bằng http)!",
+        "error"
+      );
+    }
+    if (startChapter < 1 || endChapter < 1) {
+      return addToast("Số chương phải lớn hơn 0!", "error");
+    }
+    if (startChapter > endChapter) {
+      return addToast(
+        "Chương bắt đầu phải nhỏ hơn hoặc bằng chương kết thúc!",
+        "error"
+      );
+    }
+
+    const MAX_BATCH_SIZE = 1000;
+    const totalChapters = endChapter - startChapter + 1;
+
+    if (totalChapters > MAX_BATCH_SIZE) {
+      return addToast(
+        `Giới hạn tối đa ${MAX_BATCH_SIZE} chương mỗi lần! (Bạn đang chọn ${totalChapters})`,
+        "error"
+      );
+    }
+
+    const MAX_CHAPTER_NUM = 10000;
+    if (endChapter > MAX_CHAPTER_NUM) {
+      return addToast(`Số chương quá lớn (Max ${MAX_CHAPTER_NUM})!`, "error");
+    }
 
     setBatchLoading(true);
-    const totalChapters = endChapter - startChapter + 1;
     const storySlug =
       new URL(batchStoryUrl).pathname.split("/").pop() || "Story";
 
@@ -521,7 +554,7 @@ export default function Home() {
               });
               const data = await res.json();
 
-              if (res.ok) {
+              if (data.success) {
                 setTasks((prev) =>
                   prev.map((t) =>
                     t.id === currentTaskId
@@ -539,7 +572,12 @@ export default function Home() {
                   )
                 );
               } else {
-                throw new Error(data.error);
+                // Determine if retryable or fatal? For batch, we just log valid errors
+                if (data.code === "DOMAIN_NOT_SUPPORTED") {
+                  // Optional: add a warning toast once, or just log
+                  console.warn(`Domain not supported: ${cleanUrl}`);
+                }
+                throw new Error(data.error || "Batch fetch failed");
               }
             } catch (e: any) {
               console.error(e);
@@ -564,6 +602,12 @@ export default function Home() {
       addToast("Batch hoàn tất!", "success");
     } catch (err) {
       console.error(err);
+      addToast(
+        err instanceof Error
+          ? err.message
+          : "An error occurred during batch processing",
+        "error"
+      );
     } finally {
       setBatchLoading(false);
     }
@@ -571,30 +615,44 @@ export default function Home() {
 
   // --- LOGIC: AI ---
   const handleAiSubmit = async () => {
-    if (aiFiles.length === 0 || !aiPrompt.trim())
-      return addToast("Thiếu File hoặc Prompt!", "error");
+    const hasFiles = aiFiles.length > 0;
+    const hasManualInput = inputContext.trim().length > 0;
+
+    if ((!hasFiles && !hasManualInput) || !aiPrompt.trim())
+      return addToast(
+        "Please provide Content (File/Text) and a Prompt!",
+        "error"
+      );
 
     setAiLoading(true);
 
     try {
-      if (mergeOutput) {
-        // MERGE MODE: Combine all files into one request
+      if (mergeOutput || (!hasFiles && hasManualInput)) {
+        // MERGE MODE: Combine all files + manual input
         const taskId = sizeId();
         setTasks((prev) => [
           {
             id: taskId,
             type: "ai",
             status: "processing",
-            title: `AI Task: Merged Context (${aiFiles.length} files)`,
+            title: `AI Task: ${
+              hasFiles ? `Merged (${aiFiles.length} files)` : "Manual Input"
+            }`,
             subtitle: "Generating content...",
             timestamp: new Date().toLocaleTimeString(),
           },
           ...prev,
         ]);
 
-        const contentToProcess = aiFiles
-          .map((f) => `--- FILE: ${f.name} ---\n${f.content}`)
-          .join("\n\n");
+        let contentToProcess = "";
+        if (hasManualInput) {
+          contentToProcess += `--- MANUAL INPUT ---\n${inputContext}\n\n`;
+        }
+        if (hasFiles) {
+          contentToProcess += aiFiles
+            .map((f) => `--- FILE: ${f.name} ---\n${f.content}`)
+            .join("\n\n");
+        }
 
         const res = await fetch("/api/ai-process", {
           method: "POST",
@@ -602,21 +660,33 @@ export default function Home() {
           body: JSON.stringify({ prompt: aiPrompt, content: contentToProcess }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
 
-        setTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId
-              ? {
-                  ...t,
-                  status: "success",
-                  title: `AI Result: Merged Output`,
-                  data: data.data.response,
-                  subtitle: "rewritten successfully",
-                }
-              : t
-          )
-        );
+        if (data.success) {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === taskId
+                ? {
+                    ...t,
+                    status: "success",
+                    title: `AI Result: Merged Output`,
+                    data: data.data.response,
+                    subtitle: "rewritten successfully",
+                  }
+                : t
+            )
+          );
+          addToast("AI Processing Complete!", "success");
+        } else {
+          // Handle Cloud/Quota errors specifically
+          if (data.code === "CONTENT_TOO_LONG") {
+            addToast("Content exceeds limits. Please split files.", "error");
+          } else if (res.status === 429) {
+            addToast("System Busy (429). Please wait a moment.", "warning");
+          } else if (data.code === "INVALID_API_KEY") {
+            addToast("Invalid API Key configuration.", "error");
+          }
+          throw new Error(data.error || "AI processing failed");
+        }
       } else {
         // BATCH MODE: Process each file individually
         const newTasks = aiFiles.map((file) => ({
@@ -727,8 +797,17 @@ export default function Home() {
 
     const newFiles: { name: string; content: string }[] = [];
     for (let i = 0; i < files.length; i++) {
+      // Check for .txt extension
+      if (!files[i].name.toLowerCase().endsWith(".txt")) {
+        addToast(
+          `Skipped "${files[i].name}": Only .txt files are allowed`,
+          "error"
+        );
+        continue;
+      }
+
       if (files[i].size > 1024 * 1024) {
-        addToast("File > 1MB", "error");
+        addToast(`Skipped "${files[i].name}": File > 1MB`, "error");
         continue;
       }
       newFiles.push({ name: files[i].name, content: await files[i].text() });
@@ -739,28 +818,11 @@ export default function Home() {
 
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
-    setIsDragging(false);
     await processFiles(e.dataTransfer.files);
-  };
-
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    // Only set false if leaving the drop zone entirely
-    if (e.currentTarget === e.target) {
-      setIsDragging(false);
-    }
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     await processFiles(e.target.files);
-  };
-
-  const removeFile = (index: number) => {
-    setAiFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleDownloadAll = () => {
@@ -822,62 +884,40 @@ export default function Home() {
   };
 
   return (
-    <div className="h-screen bg-[#050505] text-gray-300 font-sans selection:bg-purple-500/30 overflow-hidden flex flex-col">
-      <style jsx>{`
-        .task-scroll::-webkit-scrollbar {
-          width: 8px;
-          height: 8px;
-        }
-        .task-scroll::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .task-scroll::-webkit-scrollbar-thumb {
-          background: #333;
-          border-radius: 4px;
-        }
-        .task-scroll::-webkit-scrollbar-thumb:hover {
-          background: #555;
-        }
-      `}</style>
-
+    <div className="h-screen bg-background text-foreground font-sans selection:bg-purple-500/30 overflow-hidden flex flex-col transition-colors duration-300">
       {/* HEADER */}
-      <header className="h-14 border-b border-white/10 bg-[#0a0a0a] flex items-center justify-between px-6 shrink-0">
+      <header className="h-14 border-b border-gray-200 dark:border-white/10 bg-white/80 dark:bg-[#0a0a0a] backdrop-blur-md flex items-center justify-between px-6 shrink-0 z-20 transition-colors duration-300">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-gradient-to-tr from-purple-600 to-cyan-500 rounded flex items-center justify-center font-bold text-black text-xs">
+          <div className="w-6 h-6 bg-gradient-to-tr from-purple-600 to-cyan-500 rounded flex items-center justify-center font-bold text-white text-xs shadow-lg shadow-purple-500/20">
             S
           </div>
-          <h1 className="text-sm font-bold tracking-wide text-white">
+          <h1 className="font-bold text-sm tracking-widest bg-clip-text text-transparent bg-gradient-to-r from-gray-800 to-gray-600 dark:from-white dark:to-gray-400">
             STORY COMMANDER{" "}
-            <span className="text-[10px] text-purple-500 ml-1">V2.0</span>
+            <span className="text-[10px] text-purple-500 font-mono">v2.0</span>
           </h1>
         </div>
-        <div className="flex items-center gap-4 text-xs font-mono text-gray-500">
-          <span className="flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>{" "}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-[10px] font-mono font-bold text-green-600 dark:text-green-500">
+            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
             SYSTEM ONLINE
-          </span>
-
-          {/* Help Button - Restart Tour */}
+          </div>
+          <ThemeToggle />
           <button
             type="button"
             onClick={() => setShowOnboarding(true)}
-            className="flex items-center justify-center w-6 h-6 rounded-full bg-white/5 hover:bg-purple-600/20 border border-white/10 hover:border-purple-500/50 text-gray-400 hover:text-purple-400 transition-all group relative"
-            title="Show Onboarding Tour"
+            className="w-6 h-6 rounded-full bg-gray-100 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-white/10 transition-all font-bold text-sm"
+            title="Restart Onboarding Tour"
           >
-            <span className="text-sm font-bold">?</span>
-            {/* Tooltip */}
-            <div className="absolute top-full mt-2 right-0 w-32 bg-black border border-purple-500/30 rounded-lg p-2 text-[10px] text-purple-300 opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
-              Restart Tour
-            </div>
+            ?
           </button>
         </div>
       </header>
 
       <main className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
         {/* LEFT: COMMAND CENTER */}
-        <section className="lg:col-span-5 bg-[#0a0a0a] border-r border-white/10 flex flex-col h-full">
+        <section className="lg:col-span-5 bg-white dark:bg-[#0a0a0a] border-r border-gray-200 dark:border-white/10 flex flex-col h-full transition-colors duration-300">
           {/* Tabs */}
-          <div className="flex border-b border-white/10">
+          <div className="flex border-b border-gray-200 dark:border-white/10">
             {["extract", "batch", "ai"].map((tab) => (
               <button
                 key={tab}
@@ -885,8 +925,8 @@ export default function Home() {
                 onClick={() => setActiveTab(tab as "extract" | "batch" | "ai")}
                 className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-all ${
                   activeTab === tab
-                    ? "bg-white/5 text-purple-400 border-b-2 border-purple-500"
-                    : "text-gray-600 hover:text-gray-400 hover:bg-white/[0.02]"
+                    ? "bg-purple-50 dark:bg-white/5 text-purple-600 dark:text-purple-400 border-b-2 border-purple-500"
+                    : "text-gray-500 dark:text-gray-600 hover:text-gray-700 dark:hover:text-gray-400 hover:bg-gray-50 dark:hover:bg-white/[0.02]"
                 }`}
               >
                 {tab === "extract" && "⚡ Single"}
@@ -900,661 +940,78 @@ export default function Home() {
           <div className="p-6 flex-1 overflow-y-auto task-scroll">
             {/* MODE: EXTRACT */}
             {activeTab === "extract" && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 mb-2 block">
-                    TARGET URL
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={url}
-                      onChange={(e) => setUrl(e.target.value)}
-                      placeholder="https://..."
-                      className="w-full bg-[#111] border border-white/10 rounded-lg p-3 pl-10 text-sm text-white focus:outline-none focus:border-purple-500/50 transition-colors"
-                    />
-                    <div className="absolute left-3 top-3 text-gray-600">
-                      <Icons.Bolt className="w-4 h-4" />
-                    </div>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleAnalyze}
-                  disabled={loading}
-                  className="w-full py-3 bg-white text-black font-bold text-sm rounded-lg hover:bg-gray-200 transition-colors flex items-center justify-center gap-2"
-                >
-                  {loading ? "Scanning..." : "INITIATE EXTRACTION"}
-                </button>
-
-                <div className="p-4 rounded-lg bg-blue-500/5 border border-blue-500/10 text-xs text-blue-300/80 leading-relaxed">
-                  <strong>Identify:</strong> Supports standard story sites.{" "}
-                  <br />
-                  <strong>Action:</strong> Fetches content immediately into the
-                  matrix.
-                </div>
-
-                {/* RECENT SIGNALS */}
-                <div>
-                  <label className="text-[10px] font-bold text-gray-600 mb-2 block tracking-wider">
-                    RECENT SIGNALS
-                  </label>
-                  <div className="bg-[#0f0f0f] rounded-lg border border-white/5 p-2 space-y-1">
-                    {tasks
-                      .filter((t) => t.type === "extract")
-                      .slice(0, 3)
-                      .map((t) => (
-                        <div
-                          key={t.id}
-                          className="flex items-center gap-2 p-2 hover:bg-white/5 rounded transition-colors cursor-default"
-                        >
-                          <div
-                            className={`w-1.5 h-1.5 rounded-full ${
-                              t.status === "success"
-                                ? "bg-green-500"
-                                : "bg-red-500"
-                            }`}
-                          ></div>
-                          <span className="text-[10px] text-gray-400 truncate flex-1">
-                            {t.title}
-                          </span>
-                          <span className="text-[9px] text-gray-600 font-mono">
-                            {t.timestamp}
-                          </span>
-                        </div>
-                      ))}
-                    {tasks.filter((t) => t.type === "extract").length === 0 && (
-                      <div className="text-[10px] text-gray-700 text-center py-2 italic">
-                        No recent signals detected.
-                      </div>
-                    )}
-                  </div>
-                </div>
+              <div className="animate-in fade-in slide-in-from-left-4 duration-300">
+                <ExtractForm
+                  url={url}
+                  setUrl={setUrl}
+                  loading={loading}
+                  onAnalyze={handleAnalyze}
+                />
               </div>
             )}
 
             {/* MODE: BATCH */}
             {activeTab === "batch" && (
-              <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 mb-2 block">
-                    STORY BASE URL
-                  </label>
-                  <input
-                    type="text"
-                    value={batchStoryUrl}
-                    onChange={(e) => setBatchStoryUrl(e.target.value)}
-                    className="w-full bg-[#111] border border-white/10 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-cyan-500/50"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 mb-2 block">
-                      START
-                    </label>
-                    <input
-                      type="number"
-                      value={startChapter}
-                      onChange={(e) => setStartChapter(Number(e.target.value))}
-                      className="w-full bg-[#111] border border-white/10 rounded-lg p-3 text-sm text-center focus:border-cyan-500/50 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 mb-2 block">
-                      END
-                    </label>
-                    <input
-                      type="number"
-                      value={endChapter}
-                      onChange={(e) => setEndChapter(Number(e.target.value))}
-                      className="w-full bg-[#111] border border-white/10 rounded-lg p-3 text-sm text-center focus:border-cyan-500/50 outline-none"
-                    />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleBatchDownload}
-                  disabled={batchLoading}
-                  className="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold text-sm rounded-lg hover:shadow-lg hover:shadow-cyan-500/20 transition-all flex items-center justify-center gap-2"
-                >
-                  {batchLoading ? "Processing Batch..." : "RUN BATCH SEQUENCE"}
-                </button>
-
-                {/* SEQUENCE PREVIEW */}
-                <div className="mt-4">
-                  <div className="flex justify-between items-end mb-2">
-                    <label className="text-[10px] font-bold text-gray-600 tracking-wider">
-                      SEQUENCE PREVIEW
-                    </label>
-                    <span className="text-[10px] text-cyan-500 font-mono">
-                      Total: {Math.max(0, endChapter - startChapter + 1)} Chaps
-                    </span>
-                  </div>
-                  <div className="bg-[#0f0f0f] rounded-lg border border-white/5 p-3 flex flex-wrap gap-1 max-h-[120px] overflow-y-auto task-scroll">
-                    {Array.from(
-                      {
-                        length: Math.min(
-                          50,
-                          Math.max(0, endChapter - startChapter + 1)
-                        ),
-                      },
-                      (_, i) => startChapter + i
-                    ).map((num) => (
-                      <div
-                        key={num}
-                        className="bg-cyan-900/20 border border-cyan-500/20 text-cyan-300 text-[9px] px-1.5 py-0.5 rounded font-mono"
-                      >
-                        #{num}
-                      </div>
-                    ))}
-                    {endChapter - startChapter + 1 > 50 && (
-                      <span className="text-[9px] text-gray-600 flex items-center px-1">
-                        ... +{endChapter - startChapter + 1 - 50} more
-                      </span>
-                    )}
-                    {endChapter < startChapter && (
-                      <span className="text-[10px] text-red-500 italic">
-                        Invalid Range
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
+              <BatchManager
+                batchStoryUrl={batchStoryUrl}
+                setBatchStoryUrl={setBatchStoryUrl}
+                startChapter={startChapter}
+                setStartChapter={setStartChapter}
+                endChapter={endChapter}
+                setEndChapter={setEndChapter}
+                loading={batchLoading}
+                onRunBatch={handleBatchDownload}
+              />
             )}
 
             {/* MODE: AI STUDIO */}
             {activeTab === "ai" && (
-              <div className="animate-in fade-in slide-in-from-left-4 duration-300 h-full flex flex-col bg-[#0f0f0f] border border-white/5 rounded-xl overflow-hidden relative">
-                {/* Decorative Header Line */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-600 to-pink-600 opacity-50"></div>
-
-                {/* Header */}
-                <div className="p-4 flex justify-between items-center border-b border-white/5">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 bg-purple-500/10 rounded flex items-center justify-center">
-                      <Icons.Sparkles className="w-4 h-4 text-purple-400" />
-                    </div>
-                    <h2 className="text-sm font-bold tracking-widest text-white">
-                      AI STUDIO
-                    </h2>
-                  </div>
-                  <div className="px-2 py-1 bg-green-500/10 border border-green-500/20 rounded-full flex items-center gap-1.5">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div>
-                    <span className="text-[10px] font-bold text-green-500">
-                      ONLINE
-                    </span>
-                  </div>
-                </div>
-
-                {/* Scrollable Content Area */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-5 task-scroll">
-                  {/* Input Data */}
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <div className="flex items-center gap-2 border-l-2 border-purple-500 pl-2">
-                        <span className="text-xs font-bold text-gray-300">
-                          INPUT DATA
-                        </span>
-                      </div>
-                      <label className="flex items-center gap-1 text-[10px] text-purple-400 font-bold cursor-pointer hover:text-purple-300 transition-colors bg-purple-500/10 px-2 py-1 rounded border border-purple-500/20">
-                        <Icons.Document className="w-3 h-3" /> LOAD FILE
-                        <input
-                          type="file"
-                          multiple
-                          className="hidden"
-                          onChange={handleFileSelect}
-                        />
-                      </label>
-                    </div>
-
-                    <div
-                      onDrop={handleDrop}
-                      onDragOver={handleDragOver}
-                      className={`flex flex-col min-h-[240px] bg-[#050505] rounded-xl border-2 border-dashed transition-all overflow-hidden ${
-                        aiFiles.length > 0
-                          ? "border-purple-500/30"
-                          : "border-white/5 hover:border-white/10"
-                      }`}
-                    >
-                      {/* File List Header */}
-                      {aiFiles.length > 0 && (
-                        <div className="w-full max-h-[140px] overflow-y-auto task-scroll border-b border-white/5 bg-white/[0.02] p-2 space-y-1">
-                          {aiFiles.map((f, i) => (
-                            <div
-                              key={i}
-                              className="bg-purple-900/40 text-purple-200 text-[10px] px-2 py-1.5 rounded border border-purple-500/30 flex items-center justify-between shadow-sm backdrop-blur-sm group/file hover:bg-purple-900/60 transition-colors"
-                            >
-                              <div className="flex items-center gap-2 overflow-hidden">
-                                <Icons.Document className="w-3 h-3 shrink-0" />
-                                <span className="truncate max-w-[200px]">
-                                  {f.name}
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  removeFile(i);
-                                }}
-                                className="ml-2 text-gray-400 hover:text-red-400 p-1 rounded hover:bg-black/20 transition-colors"
-                                title="Remove file"
-                              >
-                                <Icons.XCircle className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Main Text Input */}
-                      <textarea
-                        placeholder="Paste your source text here or drag & drop a .txt file..."
-                        className="flex-1 w-full bg-transparent p-4 text-xs text-gray-300 placeholder:text-gray-700 resize-none focus:outline-none focus:bg-white/[0.01]"
-                      ></textarea>
-
-                      {/* Bottom Footer */}
-                      <div className="p-2 flex justify-between text-[10px] text-gray-700 font-mono border-t border-white/5 bg-black/20">
-                        <span>{aiFiles.length} files attached</span>
-                        <span>Source: Manual / Drag & Drop</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Directives */}
-                  <div>
-                    <div className="flex items-center gap-2 border-l-2 border-blue-500 pl-2 mb-2">
-                      <span className="text-xs font-bold text-gray-300">
-                        DIRECTIVES
-                      </span>
-                    </div>
-                    <div className="relative">
-                      <textarea
-                        value={aiPrompt}
-                        onChange={(e) => setAiPrompt(e.target.value)}
-                        placeholder="Enter system prompt instructions (e.g., 'Summarize efficiently', 'Make it punchy')..."
-                        className="w-full bg-[#050505] border border-white/10 rounded-xl p-4 text-xs text-gray-300 placeholder:text-gray-700 min-h-[100px] focus:outline-none focus:border-blue-500/30 transition-colors"
-                      />
-                      <Icons.Sliders className="absolute bottom-3 right-3 w-4 h-4 text-gray-700" />
-                    </div>
-
-                    {/* QUICK DIRECTIVES */}
-                    <div className="mt-3 flex gap-2 flex-wrap">
-                      {[
-                        {
-                          label: "Rewrite Creative",
-                          prompt:
-                            "Rewrite this text creatively, making it more engaging and descriptive.",
-                        },
-                        {
-                          label: "Summarize",
-                          prompt:
-                            "Provide a concise summary of the key points in the text.",
-                        },
-                        {
-                          label: "Fix Grammar",
-                          prompt:
-                            "Proofread the text, correcting any grammatical errors and awkward phrasing.",
-                        },
-                        {
-                          label: "Translate to VN",
-                          prompt:
-                            "Translate the following text into natural-sounding Vietnamese.",
-                        },
-                      ].map((item) => (
-                        <button
-                          key={item.label}
-                          type="button"
-                          onClick={() => setAiPrompt(item.prompt)}
-                          className="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[10px] text-gray-400 hover:text-white hover:bg-purple-600/20 hover:border-purple-500/50 transition-all font-medium"
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer Actions */}
-                <div className="p-4 border-t border-white/5 bg-black/20">
-                  <div className="flex items-center gap-2 mb-3 px-1">
-                    <input
-                      type="checkbox"
-                      id="mergeOutput"
-                      checked={mergeOutput}
-                      onChange={(e) => setMergeOutput(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded border-white/20 bg-white/5 accent-purple-500 focus:ring-0 cursor-pointer"
-                    />
-                    <label
-                      htmlFor="mergeOutput"
-                      className="text-[10px] font-bold text-gray-500 cursor-pointer select-none hover:text-gray-300"
-                    >
-                      MERGE OUTPUT (Combine files into one result)
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAiSubmit}
-                    disabled={aiLoading}
-                    className="w-full py-4 bg-gradient-to-r from-purple-600 to-pink-600 rounded-xl font-bold text-sm text-white hover:shadow-[0_0_20px_rgba(168,85,247,0.4)] transition-all flex items-center justify-center gap-2 group"
-                  >
-                    {aiLoading ? (
-                      <>
-                        {" "}
-                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>{" "}
-                        PROCESSING...{" "}
-                      </>
-                    ) : (
-                      <>
-                        {" "}
-                        <Icons.Link className="w-4 h-4 group-hover:rotate-45 transition-transform" />{" "}
-                        GENERATE{" "}
-                      </>
-                    )}
-                  </button>
-                  <div className="text-center mt-3 text-[10px] font-mono text-gray-600">
-                    EST. TIME: ~4.2s
-                  </div>
-                </div>
-              </div>
+              <AIStudio
+                aiPrompt={aiPrompt}
+                setAiPrompt={setAiPrompt}
+                inputContext={inputContext}
+                setInputContext={setInputContext}
+                aiFiles={aiFiles}
+                setAiFiles={setAiFiles}
+                mergeOutput={mergeOutput}
+                setMergeOutput={setMergeOutput}
+                loading={aiLoading}
+                onSubmit={handleAiSubmit}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onFileSelect={handleFileSelect}
+                addToast={addToast}
+              />
             )}
           </div>
         </section>
 
-        {/* RIGHT: UNIFIED RESULT MATRIX */}
-        <section className="lg:col-span-7 bg-[#050505] relative flex flex-col h-full overflow-hidden">
-          <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#0a0a0a]">
-            <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest">
-              Task Matrix
-            </h2>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleDownloadAll}
-                className="p-1.5 hover:bg-white/10 rounded text-gray-500 hover:text-cyan-400 transition-colors"
-                title="Download All (Merged)"
-              >
-                <Icons.Download className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (tasks.length === 0) {
-                    addToast("No tasks to clear", "info");
-                    return;
-                  }
-                  setConfirmDialog({
-                    isOpen: true,
-                    title: "Clear All Tasks?",
-                    message: `This will permanently delete all ${tasks.length} task(s). This action cannot be undone.`,
-                    type: "danger",
-                    onConfirm: () => {
-                      setTasks([]);
-                      addToast("All tasks cleared", "success");
-                      setConfirmDialog({ ...confirmDialog, isOpen: false });
-                    },
-                  });
-                }}
-                className="p-1.5 hover:bg-white/10 rounded text-gray-500 hover:text-red-400"
-                title="Clear All"
-              >
-                <Icons.Trash className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 task-scroll relative">
-            {tasks.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center select-none opacity-80 z-10 relative">
-                <div className="absolute inset-0 z-[-1] opacity-[0.03] pointer-events-none overflow-hidden flex items-center justify-center">
-                  {/* Circuit Pattern Background */}
-                  <svg
-                    width="100%"
-                    height="100%"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <pattern
-                      id="circuit"
-                      x="0"
-                      y="0"
-                      width="100"
-                      height="100"
-                      patternUnits="userSpaceOnUse"
-                    >
-                      <path
-                        d="M10 10h80v80h-80z"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="0.5"
-                      />
-                      <path
-                        d="M50 0v100M0 50h100"
-                        stroke="currentColor"
-                        strokeWidth="0.5"
-                      />
-                      <circle cx="50" cy="50" r="2" fill="currentColor" />
-                      <rect
-                        x="20"
-                        y="20"
-                        width="10"
-                        height="10"
-                        stroke="currentColor"
-                      />
-                      <rect
-                        x="70"
-                        y="70"
-                        width="10"
-                        height="10"
-                        stroke="currentColor"
-                      />
-                    </pattern>
-                    <rect width="100%" height="100%" fill="url(#circuit)" />
-                  </svg>
-                </div>
-
-                <div className="w-20 h-20 bg-gradient-to-tr from-purple-600 to-pink-600 rounded-2xl flex items-center justify-center mb-6 shadow-2xl shadow-purple-500/20 animate-in zoom-in-50 duration-500">
-                  <Icons.Layers className="w-10 h-10 text-white" />
-                </div>
-
-                <h3 className="text-3xl font-black text-white tracking-tight mb-3">
-                  STORY CONTENT COMMANDER
-                </h3>
-                <p className="text-gray-500 max-w-sm text-sm font-medium leading-relaxed">
-                  Select a tool from the{" "}
-                  <span className="text-purple-400">Command Center</span> on the
-                  left to begin processing content.
-                </p>
-
-                <div className="mt-8 flex gap-2">
-                  <div className="w-16 h-1 bg-white/5 rounded-full"></div>
-                  <div className="w-8 h-1 bg-purple-500 rounded-full"></div>
-                  <div className="w-16 h-1 bg-white/5 rounded-full"></div>
-                </div>
-              </div>
-            ) : (
-              tasks.map((task) => (
-                <div
-                  key={task.id}
-                  onClick={() => setViewingTask(task)}
-                  className="group relative bg-[#111] hover:bg-[#161616] border border-white/5 hover:border-white/10 rounded-xl p-4 transition-all cursor-pointer flex gap-4 items-center"
-                >
-                  {/* Icon */}
-                  <div
-                    className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                      task.type === "extract"
-                        ? "bg-purple-500/10 text-purple-400"
-                        : task.type === "batch"
-                        ? "bg-cyan-500/10 text-cyan-400"
-                        : "bg-pink-500/10 text-pink-400"
-                    }`}
-                  >
-                    {task.type === "extract" && (
-                      <Icons.Bolt className="w-5 h-5" />
-                    )}
-                    {task.type === "batch" && (
-                      <Icons.Layers className="w-5 h-5" />
-                    )}
-                    {task.type === "ai" && (
-                      <Icons.Sparkles className="w-5 h-5" />
-                    )}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex justify-between items-start">
-                      <h3 className="text-sm font-semibold text-gray-200 truncate pr-2 group-hover:text-white transition-colors">
-                        {task.title}
-                      </h3>
-                      <span className="text-[10px] text-gray-600 font-mono">
-                        {task.timestamp}
-                      </span>
-                    </div>
-                    <div className="flex justify-between items-center mt-1">
-                      <p className="text-xs text-gray-500 truncate">
-                        {task.subtitle}
-                      </p>
-
-                      {/* Status Badge */}
-                      <div
-                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border ${
-                          task.status === "success"
-                            ? "bg-green-500/5 text-green-500 border-green-500/20"
-                            : task.status === "processing"
-                            ? "bg-blue-500/5 text-blue-400 border-blue-500/20"
-                            : "bg-red-500/5 text-red-500 border-red-500/20"
-                        }`}
-                      >
-                        {task.status}
-                      </div>
-                    </div>
-
-                    {/* Progress Bar (Optional) */}
-                    {task.progress !== undefined && (
-                      <div className="mt-2 h-1 w-full bg-white/5 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-cyan-500 transition-all duration-300"
-                          style={{ width: `${task.progress}%` }}
-                        ></div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Actions (Hover) */}
-                  <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity pl-2 border-l border-white/5">
-                    <button
-                      type="button"
-                      onClick={(e) => handleDownloadTask(task.id, e)}
-                      className="p-2 hover:bg-white/10 rounded text-gray-400 hover:text-white"
-                      title="Download"
-                    >
-                      <Icons.Document className="w-4 h-4" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => handleDeleteTask(task.id, e)}
-                      className="p-2 hover:bg-white/10 rounded text-gray-400 hover:text-red-400"
-                      title="Delete"
-                    >
-                      <Icons.Trash className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-            {/* ONBOARDING TOUR */}
-            {showOnboarding && (
-              <Suspense
-                fallback={
-                  <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center">
-                    <div className="text-white text-sm">Loading tour...</div>
-                  </div>
-                }
-              >
-                <OnboardingTour
-                  onComplete={() => {
-                    setShowOnboarding(false);
-                    localStorage.setItem(
-                      "story-commander-tour-completed",
-                      "true"
-                    );
-                  }}
-                  onSkip={() => {
-                    setShowOnboarding(false);
-                    localStorage.setItem(
-                      "story-commander-tour-completed",
-                      "true"
-                    );
-                  }}
-                />
-              </Suspense>
-            )}
-          </div>
-        </section>
+        <TaskList
+          tasks={tasks}
+          onDownload={handleDownloadTask}
+          onDelete={handleDeleteTask}
+          onDownloadAll={handleDownloadAll}
+          onClearAll={() => {
+            if (tasks.length === 0) {
+              addToast("No tasks to clear", "info");
+              return;
+            }
+            setConfirmDialog({
+              isOpen: true,
+              title: "Clear All Tasks?",
+              message: `This will permanently delete all ${tasks.length} task(s). This action cannot be undone.`,
+              type: "danger",
+              onConfirm: () => {
+                setTasks([]);
+                addToast("All tasks cleared", "success");
+                setConfirmDialog({ ...confirmDialog, isOpen: false });
+              },
+            });
+          }}
+          addToast={addToast}
+          TaskCardComponent={TaskCard}
+        />
       </main>
-
-      {/* QUICK VIEW MODAL */}
-      {viewingTask && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="bg-[#111] border border-white/10 w-full max-w-4xl h-[80vh] rounded-2xl flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="p-4 border-b border-white/10 flex justify-between items-center bg-[#151515] rounded-t-2xl">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-8 h-8 rounded flex items-center justify-center ${
-                    viewingTask.type === "extract"
-                      ? "bg-purple-500/20 text-purple-400"
-                      : viewingTask.type === "batch"
-                      ? "bg-cyan-500/20 text-cyan-400"
-                      : "bg-pink-500/20 text-pink-400"
-                  }`}
-                >
-                  {viewingTask.type === "extract" && (
-                    <Icons.Bolt className="w-4 h-4" />
-                  )}
-                  {viewingTask.type === "batch" && (
-                    <Icons.Layers className="w-4 h-4" />
-                  )}
-                </div>
-                <h3 className="font-bold text-gray-200">{viewingTask.title}</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setViewingTask(null)}
-                className="p-2 hover:bg-white/10 rounded-full"
-              >
-                <Icons.XCircle className="w-6 h-6 text-gray-500" />
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-auto p-8 font-sans text-base text-gray-300 whitespace-pre-wrap leading-loose">
-              {viewingTask.status === "processing" ? (
-                <div className="flex items-center justify-center h-full text-blue-500 gap-2">
-                  <div className="w-4 h-4 border-2 border-blue-500 rounded-full animate-spin border-t-transparent"></div>{" "}
-                  Processing data...
-                </div>
-              ) : (
-                viewingTask.data || viewingTask.error || "No content available."
-              )}
-            </div>
-
-            <div className="p-4 border-t border-white/10 bg-[#151515] rounded-b-2xl flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (
-                    viewingTask.data &&
-                    typeof viewingTask.data === "string"
-                  ) {
-                    navigator.clipboard.writeText(viewingTask.data);
-                    addToast("Copied to clipboard!", "success");
-                  }
-                }}
-                className="px-4 py-2 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold transition-colors flex items-center gap-2"
-              >
-                <Icons.Copy className="w-4 h-4" /> Copy Text
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* TOASTS */}
       <div className="fixed top-6 right-6 z-[110] flex flex-col gap-2">
@@ -1597,6 +1054,20 @@ export default function Home() {
               )}
               {toast.type === "info" && (
                 <Icons.Eye className="w-5 h-5 text-blue-500 shrink-0" />
+              )}
+              {toast.type === "warning" && (
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className="w-5 h-5 text-amber-500 shrink-0"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z"
+                    clipRule="evenodd"
+                  />
+                </svg>
               )}
               <span className="text-sm font-medium flex-1">
                 {toast.message}

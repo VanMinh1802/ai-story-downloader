@@ -15,6 +15,27 @@ export async function POST(request: Request) {
       );
     }
 
+    const MAX_CONTENT_LENGTH = 100000; // Limit to ~100k chars to avoid timeouts
+    if (content.length > MAX_CONTENT_LENGTH) {
+      return NextResponse.json(
+        { 
+            error: `Content too long (${content.length} chars). Limit is ${MAX_CONTENT_LENGTH}. Please split your content.`,
+            code: "CONTENT_TOO_LONG"
+        },
+        // deno-lint-ignore no-explicit-any
+        { status: 413 } as any // Payload Too Large
+      );
+    }
+    
+    // Strict prompt validation
+    if (prompt.length > 5000) {
+         return NextResponse.json(
+            { error: "System prompt is too long (max 5000 chars).", code: "PROMPT_TOO_LONG" },
+            // deno-lint-ignore no-explicit-any
+            { status: 400 } as any
+        );
+    }
+
       // Buộc đọc từ process.env để đảm bảo lấy được biến môi trường của Next.js
     let rawKey = process.env.GENATION_API_KEY || env.GENATION_API_KEY || "";
     
@@ -26,11 +47,9 @@ export async function POST(request: Request) {
     
     const apiKey = rawKey;
     
-    console.log("DEBUG: Using API Key:", apiKey ? `${apiKey.substring(0, 8)}... (Length: ${apiKey.length})` : "NONE");
-
     if (!apiKey || apiKey === "YOUR_API_KEY_HERE" || apiKey.includes("PLACEHOLDER") || apiKey.length < 20) {
          return NextResponse.json(
-        { error: `API Key is invalid (Len: ${apiKey.length}). Check GENATION_API_KEY in .env` },
+        { error: `API Key is invalid (Len: ${apiKey.length}). Check GENATION_API_KEY in .env`, code: "INVALID_API_KEY" },
         // deno-lint-ignore no-explicit-any
         { status: 500 } as any // eslint-disable-line @typescript-eslint/no-explicit-any
       );
