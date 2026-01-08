@@ -43,13 +43,9 @@ export default function ExtractForm({
       setWarning("URL must start with http:// or https://");
       return;
     }
-    // Simple domain check for main supported site
-    if (
-      !url.includes("truyenfull.vn") &&
-      !url.includes("metruyencv") &&
-      !url.includes("tangthuvien")
-    ) {
-      setWarning("Note: Optimization is best for truyenfull.vn");
+    // Simple domain check - Strict Mode: MonkeyD Only
+    if (!url.includes("monkeydtruyen")) {
+      setWarning("Note: Currently only optimized for monkeydtruyen.com");
       // Non-blocking warning
       return;
     }
@@ -82,7 +78,7 @@ export default function ExtractForm({
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://truyenfull.vn/..."
+              placeholder="https://monkeydtruyen.com/..."
               className="w-full bg-gray-50 dark:bg-black/40 border border-gray-300 dark:border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-purple-500 dark:focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/20 transition-all text-gray-900 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-700 font-mono"
             />
           </div>

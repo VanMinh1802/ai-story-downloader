@@ -48,13 +48,9 @@ export default function BatchManager({
       setWarning("URL must start with http:// or https://");
       return;
     }
-    if (
-      !batchStoryUrl.includes("truyenfull.vn") &&
-      !batchStoryUrl.includes("metruyencv") &&
-      !batchStoryUrl.includes("tangthuvien")
-    ) {
+    if (!batchStoryUrl.includes("monkeydtruyen")) {
       setWarning(
-        "⚠️ Domain might not be supported (recommended: truyenfull.vn)"
+        "⚠️ Currently we only support monkeydtruyen.com"
       );
       return;
     }
@@ -89,7 +85,7 @@ export default function BatchManager({
             type="text"
             value={batchStoryUrl}
             onChange={(e) => setBatchStoryUrl(e.target.value)}
-            placeholder="https://truyenfull.vn/..."
+            placeholder="https://monkeydtruyen.com/..."
             className="w-full bg-gray-50 dark:bg-[#111] border border-gray-300 dark:border-white/10 rounded-lg p-3 pl-10 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-cyan-500 dark:focus:border-cyan-500/50 transition-colors"
           />
           <div className="absolute left-3 top-3 text-gray-400 dark:text-gray-600">
@@ -97,7 +93,7 @@ export default function BatchManager({
           </div>
         </div>
         <p className="text-[10px] text-gray-500 dark:text-gray-600 mt-1 ml-1">
-          Example: https://truyenfull.vn/ten-truyen/chuong-1.html
+          Example: https://monkeydtruyen.com/ten-truyen.html
         </p>
 
         {/* Validation Warning */}
